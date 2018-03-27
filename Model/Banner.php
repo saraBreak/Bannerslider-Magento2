@@ -22,6 +22,8 @@
 
 namespace Magestore\Bannerslider\Model;
 
+use Magento\Framework\Api\AttributeValueFactory;
+
 /**
  * Banner Model
  * @category Magestore
@@ -92,16 +94,23 @@ class Banner extends \Magento\Framework\Model\AbstractModel
     protected $_monolog;
 
     /**
-     * [__construct description].
-     *
-     * @param \Magento\Framework\Model\Context                                $context
-     * @param \Magento\Framework\Registry                                     $registry
-     * @param \Magestore\Bannerslider\Model\ResourceModel\Banner                   $resource
-     * @param \Magestore\Bannerslider\Model\ResourceModel\Banner\Collection        $resourceCollection
-     * @param \Magestore\Bannerslider\Model\BannerFactory                     $bannerFactory
-     * @param \Magestore\Bannerslider\Model\ResourceModel\Slider\CollectionFactory $sliderCollectionFactory
-     * @param \Magestore\Bannerslider\Model\ResourceModel\Value\CollectionFactory  $valueCollectionFactory
-     * @param \Magento\Store\Model\StoreManagerInterface                      $storeManager
+     * @var AttributeValueFactory
+     */
+    protected $customAttributeFactory;
+
+    /**
+     * Banner constructor.
+     * @param \Magento\Framework\Model\Context $context
+     * @param \Magento\Framework\Registry $registry
+     * @param ResourceModel\Banner $resource
+     * @param ResourceModel\Banner\Collection $resourceCollection
+     * @param BannerFactory $bannerFactory
+     * @param ValueFactory $valueFactory
+     * @param ResourceModel\Slider\CollectionFactory $sliderCollectionFactory
+     * @param ResourceModel\Value\CollectionFactory $valueCollectionFactory
+     * @param \Magento\Store\Model\StoreManagerInterface $storeManager
+     * @param \Magento\Framework\Logger\Monolog $monolog
+     * @param AttributeValueFactory $customAttributeFactory
      */
     public function __construct(
         \Magento\Framework\Model\Context $context,
@@ -113,7 +122,8 @@ class Banner extends \Magento\Framework\Model\AbstractModel
         \Magestore\Bannerslider\Model\ResourceModel\Slider\CollectionFactory $sliderCollectionFactory,
         \Magestore\Bannerslider\Model\ResourceModel\Value\CollectionFactory $valueCollectionFactory,
         \Magento\Store\Model\StoreManagerInterface $storeManager,
-        \Magento\Framework\Logger\Monolog $monolog
+        \Magento\Framework\Logger\Monolog $monolog,
+        AttributeValueFactory $customAttributeFactory
     ) {
         parent::__construct(
             $context,
@@ -121,13 +131,14 @@ class Banner extends \Magento\Framework\Model\AbstractModel
             $resource,
             $resourceCollection
         );
+
         $this->_bannerFactory = $bannerFactory;
         $this->_valueFactory = $valueFactory;
         $this->_valueCollectionFactory = $valueCollectionFactory;
         $this->_storeManager = $storeManager;
         $this->_sliderCollectionFactory = $sliderCollectionFactory;
-
         $this->_monolog = $monolog;
+        $this->customAttributeFactory = $customAttributeFactory;
 
         if ($storeViewId = $this->_storeManager->getStore()->getId()) {
             $this->_storeViewId = $storeViewId;
@@ -230,54 +241,27 @@ class Banner extends \Magento\Framework\Model\AbstractModel
         return parent::beforeSave();
     }
 
-    /**
-     * after save.
-     */
-//    public function afterSave()
-//    {
-//        if ($storeViewId = $this->getStoreViewId()) {
-//            $storeAttributes = $this->getStoreAttributes();
-//
-//            foreach ($storeAttributes as $attribute) {
-//                $attributeValue = $this->_valueFactory->create()
-//                    ->loadAttributeValue($this->getId(), $storeViewId, $attribute);
-//                if ($this->getData($attribute.'_in_store')) {
-//                    try {
-//                        if ($attribute == 'image' && $this->getData('delete_image')) {
-//                            $attributeValue->delete();
-//                        } else {
-//                            $attributeValue->setValue($this->getData($attribute.'_value'))->save();
-//                        }
-//                    } catch (\Exception $e) {
-//                        $this->_monolog->addError($e->getMessage());
-//                    }
-//                } elseif ($attributeValue && $attributeValue->getId()) {
-//                    try {
-//                        $attributeValue->delete();
-//                    } catch (\Exception $e) {
-//                        $this->_monolog->addError($e->getMessage());
-//                    }
-//                }
-//            }
-//        }
-//
-//        return parent::afterSave();
-//    }
-
     public function afterSave()
     {
         if ($storeViewId = $this->getStoreViewId()) {
             $storeAttributes = $this->getStoreAttributes();
-            $collectionBanner = $this->_valueCollectionFactory->create();
             $attributeValue = $this->_valueFactory->create()
-                ->loadAttributeValue($this->getId(), $storeViewId, $storeAttributes, $collectionBanner);
-            foreach ($attributeValue as $model) {
-                if ($this->getData($model->getData('attribute_code') . '_in_store')) {
+                ->loadAttributeValue($this->getId(), $storeViewId, $storeAttributes);
+            foreach ($storeAttributes as $attributeCode) {
+                $model = $attributeValue->getItemByColumnValue('attribute_code',$attributeCode);
+                if(!$model) {
+                    $model = $this->_valueFactory->create();
+                    $model->setData('banner_id', $this->getId())
+                        ->setData('store_id', $storeViewId)
+                        ->setData('attribute_code', $attributeCode);
+                }
+
+                if ($this->getData($attributeCode . '_in_store')) {
                     try {
-                        if ($model->getData('attribute_code') == 'image' && $this->getData('delete_image')) {
+                        if ($attributeCode == 'image' && $this->getData('delete_image')) {
                             $model->delete();
                         } else {
-                            $model->setValue($this->getData($model->getData('attribute_code') . '_value'))->save();
+                            $model->setValue($this->getData($attributeCode . '_value'))->save();
                         }
                     } catch (\Exception $e) {
                         $this->_monolog->addError($e->getMessage());
@@ -354,5 +338,26 @@ class Banner extends \Magento\Framework\Model\AbstractModel
             default:
                 return '_blank';
         }
+    }
+
+    /**
+     * Retrieve custom attributes values.
+     *
+     * @return \Magento\Framework\Api\AttributeInterface[]|null
+     */
+    public function getCustomAttributes()
+    {
+        $customAttributes = [];
+
+        $customAttributeCodes = array_keys($this->_data);
+
+        foreach ($customAttributeCodes as $customAttributeCode) {
+            $customAttribute = $this->customAttributeFactory->create()
+                ->setAttributeCode($customAttributeCode)
+                ->setValue($this->_data[$customAttributeCode]);
+            $customAttributes[$customAttributeCode] = $customAttribute;
+        }
+
+        return array_values($customAttributes);
     }
 }
