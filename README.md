@@ -1,4 +1,7 @@
-# Banner Slider Extension on Magento 2.0
+# Banner Slider Extension on Magento 2.0 - fixed
+
+Forked from LuckyLoek/Bannerslider-Magento2 with fixes for Magento compilation & PHP 7.1.
+Updated to version 1.8.4 to fix database conflict (no file changes in v1.8.4).
 
 Welcome to Banner Slider on Magento 2.0 Installation! We're glad that you are interested in our extension.
 <img src="http://blog.magestore.com/wp-content/uploads/2015/08/BS-gift.gif"></img>
